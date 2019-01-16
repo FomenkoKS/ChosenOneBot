@@ -5,8 +5,6 @@
  * @author Gabriele Grillo <gabry.grillo@alice.it>
  */
 class Telegram {
-
-    private $bot_id = "469108514:AAHqFiWx09JfkTCdNtiwYY3pd7I7-dBMIQQ";
     private $data = array();
     private $updates = array();
 

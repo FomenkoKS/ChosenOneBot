@@ -1,26 +1,113 @@
 <?php
 
 include("Telegram.php");
-// Set the bot TOKEN
-$bot_id = "469108514:AAHqFiWx09JfkTCdNtiwYY3pd7I7-dBMIQQ";
-// Instances the class
+$bot_id = "730506161:AAEUhC1R9dA829hqHfhjTQ7eNl1a--sYE2s";
 $telegram = new Telegram($bot_id);
-/* If you need to manually take some parameters
-*  $result = $telegram->getData();
-*  $text = $result["message"] ["text"];
-*  $chat_id = $result["message"] ["chat"]["id"];
-*/
-// Take text and chat_id from the message
+
+$redis=new Redis();
+
 $text = $telegram->Text();
 $chat_id = $telegram->ChatID();
-$redis=new Redis();
 $message=$telegram->Message();
+
+$redis->connect('127.0.0.1', 6379);
+
 $promoChannel="@ArkhamChannel";
 $promoChannels=['@ArkhamChannel','@stankocomics'];
 $admins=[32512143,174642774];
+
 function redis_error($error) {
     throw new error($error);
 }
+
+if(!is_null($text) && $chat_id>0){
+    if ($text == "/start") {
+        $telegram->sendMessage([
+            'chat_id'=>$chat_id,
+            'text'=>"*Для начала работы создайте своего бота и укажите его токен.*\r\n\r\nЧтобы создать своего бота, перейдите к боту @BotFather и отправьте команду `/newbot`, после чего вам будет предложено ввести имя и юзернейм бота. В ответ BotFather пришлёт сообщение с токеном вашего бота. Вставьте или перешлите токен сюда.",
+            'parse_mode'=>'Markdown'
+        ]);
+        $redis->hSet('waitToken',$chat_id,1);
+    }
+    
+    if ($text == "/addBot") {
+        $telegram->sendMessage([
+            'chat_id'=>$chat_id,
+            'text'=>"*Cоздайте своего бота и укажите его токен.*\r\n\r\nЧтобы создать своего бота, перейдите к боту @BotFather и отправьте команду `/newbot`, после чего вам будет предложено ввести имя и юзернейм бота. В ответ BotFather пришлёт сообщение с токеном вашего бота. Вставьте или перешлите токен сюда.",
+            'parse_mode'=>'Markdown'
+        ]);
+        $redis->hSet('waitToken',$chat_id,1);
+    }
+
+    if(preg_match('/\d+:.+/', $text, $matches)){
+        $newTg=new Telegram($matches[0]);
+        $bot=$newTg->getMe();
+        if($bot['ok']==1 && $redis->hGet('waitToken',$chat_id)==1){
+            $telegram->sendMessage([
+                'chat_id'=>$chat_id,
+                'text'=>"Бот @".$bot['result']['username']." добавлен для проведения конкурса."
+            ]);
+            $redis->sAdd('tokens:'.$chat_id,$matches[0]);
+            $redis->hSet('waitToken',$chat_id,0);
+        }elseif($bot['ok']==0){
+            $telegram->sendMessage([
+                'chat_id'=>$chat_id,
+                'text'=>"Токен не подошёл. Уточните токен или отмените с помощью команды /cancel."
+            ]);
+        }
+    }
+
+    if ($text == "/cancel") {
+        $redis->hSet('waitToken',$chat_id,0);
+        $text="Добавление бота отменено.\r\nЧтобы добавить нового бота нажмите команду /newBot.";
+        if($redis->sCard('tokens:'.$chat_id)>0) $text.="\r\nЧтобы начать новый розыгрыш призов нажмите команду /newСampaign.";
+        $telegram->sendMessage([
+            'chat_id'=>$chat_id,
+            'text'=>$text
+        ]);
+    }
+
+    if ($text == "/newCampaign") {
+        if($redis->sCard('tokens:'.$chat_id)!=0){
+            $a=[];
+            foreach($redis->sMembers('tokens:'.$chat_id) as $i){
+                $tg=new Telegram($i);
+                $bot=$tg->getMe();
+                if($bot['ok']==1) $a[$i]=$bot['result']['username'];
+            }
+            if(count($a)>0){
+                $buttons=[];
+                foreach($a as $i=>$v){
+                    array_push($buttons,['text'=>$v,'callback_data'=>'campaign_'.$i]);
+                }
+                $telegram->sendMessage([
+                    'chat_id'=>$chat_id,
+                    'text'=>"Выберите бота для проведения конкурса.",
+                    'reply_markup'=>json_encode([
+                        'inline_keyboard'=>[$buttons]
+                    ])
+                ]);
+            }else{
+                $telegram->sendMessage([
+                    'chat_id'=>$chat_id,
+                    'text'=>"*У вас нет подключённых ботов.*\r\n\r\nЧтобы создать своего бота, перейдите к боту @BotFather и отправьте команду `/newbot`, после чего вам будет предложено ввести имя и юзернейм бота. В ответ BotFather пришлёт сообщение с токеном вашего бота. Вставьте или перешлите токен сюда.",
+                    'parse_mode'=>'Markdown'
+                ]);
+                $redis->hSet('waitToken',$chat_id,1);
+            }
+        }else{
+            $telegram->sendMessage([
+                'chat_id'=>$chat_id,
+                'text'=>"*У вас нет подключённых ботов.*\r\n\r\nЧтобы создать своего бота, перейдите к боту @BotFather и отправьте команду `/newbot`, после чего вам будет предложено ввести имя и юзернейм бота. В ответ BotFather пришлёт сообщение с токеном вашего бота. Вставьте или перешлите токен сюда.",
+                'parse_mode'=>'Markdown'
+            ]);
+            $redis->hSet('waitToken',$chat_id,1);
+        }
+    }
+}
+
+$redis->close();
+
 
 // Check if the text is a command
 if(!is_null($text) && in_array($chat_id,$admins)){
@@ -38,11 +125,9 @@ if(!is_null($text) && in_array($chat_id,$admins)){
                 ])
             ]);
           }
-
         }
 
         if ($text == "/showMembers") {
-            $redis->connect('127.0.0.1', 6379);
             $members=$redis->sGetMembers('promo');
             $redis->close();
             $text="Количество участников: ".count($members)."\r\n Список участников:\r\n";
@@ -112,6 +197,7 @@ if(!is_null($text) && in_array($chat_id,$admins)){
         }
       }
 }
+
 if($telegram->Callback_Data()=='accept'){
     $redis->connect('127.0.0.1', 6379);
     $callback=$telegram->Callback_Query();
@@ -137,6 +223,6 @@ if($telegram->Callback_Data()=='accept'){
         ])
     ]);
 
-    $redis->close();
+    //$redis->close();
     //$telegram->sendMessage(['chat_id'=>32512143,'text'=>print_r($telegram->Callback_Query(),true)]);
 }
