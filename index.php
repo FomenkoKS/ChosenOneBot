@@ -78,7 +78,7 @@ if(!is_null($text) && $chat_id>0){
             if(count($a)>0){
                 $buttons=[];
                 foreach($a as $i=>$v){
-                    array_push($buttons,['text'=>$v,'callback_data'=>'campaign_'.$i]);
+                    array_push($buttons,['text'=>$v,'callback_data'=>'campaign:'.$i]);
                 }
                 $telegram->sendMessage([
                     'chat_id'=>$chat_id,
@@ -104,7 +104,45 @@ if(!is_null($text) && $chat_id>0){
             $redis->hSet('waitToken',$chat_id,1);
         }
     }
+}elseif(!is_null($telegram->Callback_Data())){
+    $callback=$telegram->Callback_Query();
+    
+    $callbackData=explode(":",$callback['data']);
+    switch($callbackData[0]){
+        case 'campaign':
+            $redis->hSet($callback['data'],'start',time());
+            
+        break;
+    }
+    /*$redis->connect('127.0.0.1', 6379);
+    $callback=$telegram->Callback_Query();
+    $text=(in_array(serialize($callback['from']),$redis->sMembers('promo')))?"Вы уже участвуете в розыгрыше🤷‍♂️ ":"Спасибо за участие. Следите за результатами в нашем канале 😉 ";
+    $telegram->answerCallbackQuery([
+        'callback_query_id'=>$callback['id'],
+        'text'=>$text,
+        'show_alert'=>true
+    ]);
+    $redis->sAdd('promo',serialize($callback['from']));
+
+    $message=$telegram->Callback_Message();
+    $text=explode("😊",$message['text']);
+    $telegram->editMessageText([
+        'chat_id'=>$message['chat']['id'],
+        'message_id'=>$message['message_id'],
+        'text'=>$text[0]."😊\r\n Участвует: ".count($redis->sMembers('promo')),
+        'reply_markup'=>json_encode([
+            'inline_keyboard'=>[[[
+                'text'=>'Я участвую!',
+                'callback_data'=>'accept'
+            ]]]
+        ])
+    ]);
+*/
+    //$redis->close();
+    //$telegram->sendMessage(['chat_id'=>32512143,'text'=>print_r($telegram->Callback_Query(),true)]);
 }
+
+
 
 $redis->close();
 
@@ -198,31 +236,4 @@ if(!is_null($text) && in_array($chat_id,$admins)){
       }
 }
 
-if($telegram->Callback_Data()=='accept'){
-    $redis->connect('127.0.0.1', 6379);
-    $callback=$telegram->Callback_Query();
-    $text=(in_array(serialize($callback['from']),$redis->sMembers('promo')))?"Вы уже участвуете в розыгрыше🤷‍♂️ ":"Спасибо за участие. Следите за результатами в нашем канале 😉 ";
-    $telegram->answerCallbackQuery([
-        'callback_query_id'=>$callback['id'],
-        'text'=>$text,
-        'show_alert'=>true
-    ]);
-    $redis->sAdd('promo',serialize($callback['from']));
 
-    $message=$telegram->Callback_Message();
-    $text=explode("😊",$message['text']);
-    $telegram->editMessageText([
-        'chat_id'=>$message['chat']['id'],
-        'message_id'=>$message['message_id'],
-        'text'=>$text[0]."😊\r\n Участвует: ".count($redis->sMembers('promo')),
-        'reply_markup'=>json_encode([
-            'inline_keyboard'=>[[[
-                'text'=>'Я участвую!',
-                'callback_data'=>'accept'
-            ]]]
-        ])
-    ]);
-
-    //$redis->close();
-    //$telegram->sendMessage(['chat_id'=>32512143,'text'=>print_r($telegram->Callback_Query(),true)]);
-}
