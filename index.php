@@ -15,7 +15,6 @@ $redis = new Redis();
 $redis->connect('127.0.0.1', 6379);
 
 if ($chat_id > 0) {
-
     if ($text == "/start") {
         $service->setTokenMsg();
     }
@@ -25,11 +24,6 @@ if ($chat_id > 0) {
         $bot = $newTg->getMe();
         if ($bot['ok'] == 1 && $redis->hGet('waitToken', $chat_id) == 1) {
             $wh = $newTg->setWebhook(URL);
-                $telegram->sendMessage([
-                    'chat_id' => $chat_id,
-                    'text' => print_r($matches,true)
-                ]);
-
             if ($wh['ok'] == 1) {
                 $redis->hSet('tokens', $chat_id, $matches[0]);
                 $redis->hSet('waitToken', $chat_id, 0);
@@ -60,7 +54,7 @@ if ($chat_id > 0) {
     }
 
     if ($text == "/menu") {
-       $service->genMenu();
+        $telegram->sendMessage($service->genMenu());
     }
 
     if ($text == "/setToken") {
@@ -69,6 +63,15 @@ if ($chat_id > 0) {
 
     if ($text == "/setChannel") {
         $service->setChannelMsg();
+    }
+
+    if($redis->hGet('waitChannel',$chat_id)){
+        if(preg_match('/(@\w+|t.me/\w+)/gi', $text, $matches) || isset($message['forward_from_chat'])){
+            $telegram->sendMessage([
+                'chat_id'=>$chat_id,
+                'text'=>$matches
+            ]);
+        }
     }
 
     /*if ($text == "/newCampaign") {

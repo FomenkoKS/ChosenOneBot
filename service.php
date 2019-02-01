@@ -36,17 +36,13 @@ class Service
         $this->redis->hSet('waitChannel', $this->chat_id, 1);
         $this->telegram->sendMessage([
             'chat_id' =>  $this->chat_id,
-            'text' => 'Пришлите сообщение из канала, укажите ссылку или юзернейм канала. Для отмены выберите команду /cancel.'
+            'text' => 'Для подключения к каналу добавьте бота в качестве администратора канала, затем пришлите любое сообщение из канала или укажите ссылку, или юзернейм канала. Для отмены выберите команду /cancel.'
         ]);
     }
 
     public function genMenu()
     {
-        $token = $this->redis->hGet('tokens', $this->chat_id());
-        $this->telegram->sendMessage([
-            'chat_id' =>  $this->chat_id,
-            'text' => $token
-        ]);
+        $token = $this->redis->hGet('tokens', $this->chat_id);
         $tg = new Telegram($token);
         
         $bot = $tg->getMe();
