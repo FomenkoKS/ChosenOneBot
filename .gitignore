@@ -1,4 +1,5 @@
 .vscode/ftp-kr.json
 .vscode/ftp-kr.sync.cache.json
-
+config.php
 index.1.php
+.vscode/ftp-kr.diff..gitignore
