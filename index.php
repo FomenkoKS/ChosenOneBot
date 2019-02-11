@@ -31,26 +31,21 @@ if ($chat_id > 0) {
             } else {
                 $telegram->sendMessage([
                     'chat_id' => $chat_id,
-                    'text' => 'Что-то произошло не так, бот не подключён. Уточните токен или отмените с помощью команды /cancel.'
+                    'text' => 'Что-то произошло не так, бот не подключён. Уточните токен или отмените с помощью команды /done.'
                 ]);
             }
 
         } elseif ($bot['ok'] == 0) {
             $telegram->sendMessage([
                 'chat_id' => $chat_id,
-                'text' => "Токен не подошёл. Уточните токен или отмените с помощью команды /cancel."
+                'text' => "Токен не подошёл. Уточните токен или отмените с помощью команды /done."
             ]);
         }
     }
 
-    if ($text == "/cancel") {
+    if ($text == "/done") {
         $service->cancelWaiting();
-        $text = "*Отмена.*\r\n\r\nДля добавления или обновления бота нажмите /setToken";
-        $telegram->sendMessage([
-            'chat_id' => $chat_id,
-            'text' => "*Отмена.*\r\n\r\nДля добавления или обновления бота нажмите /setToken, для добавления канала — /setChannel.",
-            'parse_mode' => 'Markdown'
-        ]);
+        $telegram->sendMessage($service->genMenu());
     }
 
     if ($text == "/menu") {
@@ -79,9 +74,9 @@ if ($chat_id > 0) {
                 $chat=$service->getChatId($chat);
                 $redis->sRem('channels:'.$token,$chat);
                 $redis->sAdd('channels:'.$token,$chat);
-                $text='Канал подключен, добавьте следующий канал или нажмите команду /cancel для прекращения добавления каналов.';
+                $text='Канал подключен, добавьте следующий канал или нажмите команду /done для прекращения добавления каналов.';
             }else{
-                $text='У бота нет доступа к написанию сообщений в этом канале. Настройте права и попробуйте ещё раз, или отмените добавление канала с помощью команды /cancel.';
+                $text='У бота нет доступа к написанию сообщений в этом канале. Настройте права и попробуйте ещё раз, или отмените добавление канала с помощью команды /done.';
             }
 
             $telegram->sendMessage([
@@ -92,31 +87,41 @@ if ($chat_id > 0) {
     }
 } elseif (!is_null($telegram->Callback_Data())) {
     $callback = $telegram->Callback_Query();
-    switch ($callback['data']) {
+    $callbackData=explode(":",$callback['data']);
+    switch ($callbackData[0]) {
         case 'setChannel':
             $service->setChannelMsg();
             break;
         case 'delChannel':
-            $token=$redis->hGet('tokens',$chat_id);
-            $service->debug($token);
-            $buttons=[];
-            foreach($redis->sMembers('channels:'.$token) as $chat){
-                array_push($buttons, [['callback_data' =>'delChannel:'.$chat, 'text' => $telegram->getChat(['chat_id'=>$chat])['result']['title']]]);
+            if(count($callbackData)==1){
+                $token=$redis->hGet('tokens',$callback['from']['id']);
+                $buttons=[];
+                $tg=new Telegram($token);
+                foreach($redis->sMembers('channels:'.$token) as $chat){
+                    $title=$tg->getChat(['chat_id'=>$chat])['result']['title'];
+                    array_push($buttons, ['callback_data' =>'delChannel:'.$chat, 'text' => $title]);
+                }
+                $buttons=array_chunk($buttons,2);
+                $telegram->editMessageText([
+                    'chat_id'=>$callback['from']['id'],
+                    'message_id'=>$callback['message']['message_id'],
+                    'text'=>'Выберите канал, который хотите убрать из системы.',
+                    'reply_markup' => json_encode([
+                        'inline_keyboard' => $buttons
+                    ])
+                ]);
+            }else{
+                $token=$redis->hGet('tokens',$callback['from']['id']);
+                $redis->sRem('channels:'.$token, $callbackData[1]);
+                $service->debug($menu);
+                $telegram->editMessageText(array_merge($service->genMenu(),['message_id'=>$callback['message']['message_id']]));
+                $telegram->answerCallbackQuery([
+                    'callback_query_id'=>$callback['id'],
+                    'text'=>'Канал удалён из системы'
+                ]);
             }
-            $service->debug($buttons);
-            $buttons=array_chunk($buttons,2);
-            $telegram->editMessageText([
-                'chat_id'=>$callback['from']['id'],
-                'message_id'=>$callback['message']['message_id'],
-                'text'=>'Выберите канал, который хотите убрать из системы.',
-                'reply_markup' => json_encode([
-                    'inline_keyboard' => $buttons
-                ])
-                
-            ]);
-
             break;
-        case 'setToken':
+        case 'setToken':            
             $service->setTokenMsg();
             break;
     }
