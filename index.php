@@ -1,6 +1,10 @@
 <?php
 
 include("Telegram.php");
+
+
+
+
 include("config.php");
 require_once('service.php');
 
@@ -16,7 +20,8 @@ $redis->connect('127.0.0.1', 6379);
 
 if ($chat_id > 0) {
     if ($text == "/start") {
-        $service->setTokenMsg();
+
+        $telegram->sendMessage($service->genMenu());        
     }
 
     if (preg_match('/\d+:.+/', $text, $matches)) {
@@ -60,69 +65,139 @@ if ($chat_id > 0) {
         $service->setChannelMsg();
     }
 
-    if($redis->hGet('waitChannel',$chat_id)==1){
-        $chat=null;
-        if(preg_match('/(@(\w+)|t.me\/(\w+))/', $message['text'], $matches)){
-            $chat='@'.str_ireplace(['@','t.me/'],['',''],$matches[0]);
-        }elseif(isset($message['forward_from_chat'])){
-            $chat=$message['forward_from_chat']['id'];
+    if ($redis->hGet('waitChannel', $chat_id) == 1) {
+        $chat = null;
+        if (preg_match('/(@(\w+)|t.me\/(\w+))/', $message['text'], $matches)) {
+            $chat = '@' . str_ireplace(['@', 't.me/'], ['', ''], $matches[0]);
+        } elseif (isset($message['forward_from_chat'])) {
+            $chat = $message['forward_from_chat']['id'];
         }
-        if(!is_null($chat)){
-            $token=$redis->hGet('tokens',$chat_id);
-            $flag=$service->botIsAdmin($chat,$chat_id);
-            if($flag){
-                $chat=$service->getChatId($chat);
-                $redis->sRem('channels:'.$token,$chat);
-                $redis->sAdd('channels:'.$token,$chat);
-                $text='Канал подключен, добавьте следующий канал или нажмите команду /done для прекращения добавления каналов.';
-            }else{
-                $text='У бота нет доступа к написанию сообщений в этом канале. Настройте права и попробуйте ещё раз, или отмените добавление канала с помощью команды /done.';
+        if (!is_null($chat)) {
+            $token = $redis->hGet('tokens', $chat_id);
+            $flag = $service->botIsAdmin($chat, $chat_id);
+            if ($flag) {
+                $chat = $service->getChatId($chat);
+                $redis->sRem('channels:' . $token, $chat);
+                $redis->sAdd('channels:' . $token, $chat);
+                $text = 'Канал подключен, добавьте следующий канал или нажмите команду /done для прекращения добавления каналов.';
+            } else {
+                $text = 'У бота нет доступа к написанию сообщений в этом канале. Настройте права и попробуйте ещё раз, или отмените добавление канала с помощью команды /done.';
             }
 
             $telegram->sendMessage([
-                'chat_id'=>$chat_id,
-                'text'=>$text
+                'chat_id' => $chat_id,
+                'text' => $text
             ]);
         }
     }
-} elseif (!is_null($telegram->Callback_Data())) {
+}
+
+if (!is_null($telegram->Callback_Data())) {
     $callback = $telegram->Callback_Query();
-    $callbackData=explode(":",$callback['data']);
+    $callbackData = explode(":", $callback['data']);
+    $chat_id = $callback['from']['id'];
     switch ($callbackData[0]) {
         case 'setChannel':
             $service->setChannelMsg();
             break;
         case 'delChannel':
-            if(count($callbackData)==1){
-                $token=$redis->hGet('tokens',$callback['from']['id']);
-                $buttons=[];
-                $tg=new Telegram($token);
-                foreach($redis->sMembers('channels:'.$token) as $chat){
-                    $title=$tg->getChat(['chat_id'=>$chat])['result']['title'];
-                    array_push($buttons, ['callback_data' =>'delChannel:'.$chat, 'text' => $title]);
+            if (count($callbackData) == 1) {
+                $token = $redis->hGet('tokens', $chat_id);
+                $buttons = [];
+                $tg = new Telegram($token);
+                foreach ($redis->sMembers('channels:' . $token) as $chat) {
+                    $title = $tg->getChat(['chat_id' => $chat])['result']['title'];
+                    array_push($buttons, ['callback_data' => 'delChannel:' . $chat, 'text' => $title]);
                 }
-                $buttons=array_chunk($buttons,2);
+                $buttons = array_chunk($buttons, 2);
                 $telegram->editMessageText([
-                    'chat_id'=>$callback['from']['id'],
-                    'message_id'=>$callback['message']['message_id'],
-                    'text'=>'Выберите канал, который хотите убрать из системы.',
+                    'chat_id' => $chat_id,
+                    'message_id' => $callback['message']['message_id'],
+                    'text' => 'Выберите канал, который хотите убрать из системы.',
                     'reply_markup' => json_encode([
                         'inline_keyboard' => $buttons
                     ])
                 ]);
-            }else{
-                $token=$redis->hGet('tokens',$callback['from']['id']);
-                $redis->sRem('channels:'.$token, $callbackData[1]);
-                $service->debug($menu);
-                $telegram->editMessageText(array_merge($service->genMenu(),['message_id'=>$callback['message']['message_id']]));
+            } else {
+                $token = $redis->hGet('tokens', $chat_id);
+                $redis->sRem('channels:' . $token, $callbackData[1]);
+                //$service->debug($menu);
+                $telegram->editMessageText(array_merge($service->genMenu(), ['message_id' => $callback['message']['message_id']]));
                 $telegram->answerCallbackQuery([
-                    'callback_query_id'=>$callback['id'],
-                    'text'=>'Канал удалён из системы'
+                    'callback_query_id' => $callback['id'],
+                    'text' => 'Канал удалён из системы'
                 ]);
             }
             break;
-        case 'setToken':            
+
+        case 'setToken':
             $service->setTokenMsg();
+            break;
+        case 'endCampaign':
+            $token = $redis->hGet('tokens', $chat_id);
+            $redis->sRem('campaigns', $token);
+            $telegram->editMessageText(array_merge($service->genMenu(), ['message_id' => $callback['message']['message_id']]));
+
+            break;
+        case 'startCampaign':
+            $token = $redis->hGet('tokens', $chat_id);
+            $tg = new Telegram($token);
+            $flag = 1;
+            $chats = [];
+            foreach ($redis->sMembers('channels:' . $token) as $chat) {
+                $admins = $tg->getChatAdministrators(['chat_id' => $chat]);
+                ($service->botIsAdmin($chat, $chat_id)) ? array_push($chats, $chat) : $flag = 0;
+            }
+            
+            if ($flag == 1) {
+                
+                if ($redis->sIsMember('campaigns', $token)!=1) {
+                    $redis->sAdd('campaigns', $token);
+                    foreach ($redis->sMembers('channels:' . $token) as $chat) {
+                        $tg->sendMessage($service->genPost($chat,$token));
+                        ($service->botIsAdmin($chat, $chat_id)) ? array_push($chats, $chat) : $flag = 0;
+                    }
+                    
+                    $telegram->answerCallbackQuery([
+                        'callback_query_id' => $callback['id'],
+                        'text' => 'Сообщения с объявлением направлены в каналы'
+                    ]);
+
+                    
+                    $telegram->editMessageText(array_merge($service->genMenu(), ['message_id' => $callback['message']['message_id']]));
+
+
+                }
+
+            } else {
+                $telegram->answerCallbackQuery([
+                    'callback_query_id' => $callback['id'],
+                    'text' => 'Бот не добавлен в качестве администратора в один из каналов'
+                ]);
+            }
+
+            break;
+        case 'accept':
+            //$service->debug($callback);
+            $token=0;
+            foreach ($redis->sMembers('campaigns') as $k) if (explode(':', $k)[0] == $callbackData[1]) $token=$k;
+            
+            if($token!=0){
+                $tg=new Telegram($token);
+                $tg->answerCallbackQuery([
+                    'callback_query_id' => $callback['id'],
+                    'text' => 'Спасибо за участие'
+                ]);
+                //$service->debug($callback);
+
+                $redis->sAdd('members:'.$token,serialize($callback['from']));
+                /*foreach($redis->sMembers('members:'.$token) as $member){
+                    $service->debug($member);
+                }*/
+
+                
+            } 
+            $tg->editMessageText(array_merge($service->genPost($callback['message']['chat']['id'],$token), ['message_id' => $callback['message']['message_id']]));
             break;
     }
 }

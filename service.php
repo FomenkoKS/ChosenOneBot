@@ -40,6 +40,30 @@ class Service
         ]);
     }
 
+    public function genPost($chat,$token)
+    {
+        $buttons=[];
+        if($this->redis->sIsMember('campaigns',$token)){
+            $text='Чтобы участвовать в розыгрыше, нажмите кнопку ниже.';
+            array_push($buttons,[[
+                'text' => 'Я участвую!',
+                'callback_data' => 'accept:' .explode(':', $token)[0]
+            ]]);
+        }else{
+            $text='Конкурс завершён.';
+        }
+        $settings=[
+            'chat_id' => $chat,
+            'text' => $text,
+            'reply_markup' => json_encode([
+                'inline_keyboard' => $buttons
+            ])
+        ];
+        
+
+        return $settings;
+    }
+
     public function genMenu()
     {
         $this->cancelWaiting();
@@ -64,12 +88,20 @@ class Service
 
                 if($this->redis->sCard('channels:'.$token)>0){
                     array_push($buttons, [['callback_data' => 'delChannel', 'text' => 'Убрать канал']]);
+                    if($this->redis->sIsMember('campaigns',$token)){
+                        array_push($buttons, [['callback_data' => 'endCampaign', 'text' => 'Завершить розыгрыш']]);
+                    }else{
+                        array_push($buttons, [['callback_data' => 'startCampaign', 'text' => 'Начать розыгрыш']]);
+                    }
                 }
+
+
             }
 
-        } else $text = 'Токен бота не подключён. Чтобы подключить выберите команду /setToken или нажмите кнопку ниже.';
+        } else $text = "<b>Для начала работы создайте своего бота и укажите его токен.</b>\r\n\r\nЧтобы подключить токен выберите команду /setToken или нажмите кнопку ниже.";
+        
         array_push($buttons, [['callback_data' => 'setToken', 'text' => 'Подключить токен']]);
-
+        
         $settings = [
             'chat_id' => $this->chat_id,
             'text' => $text,
@@ -78,9 +110,9 @@ class Service
                 'inline_keyboard' => $buttons
             ])
         ];
-
         return $settings;
     }
+
 
     public function cancelWaiting()
     {
