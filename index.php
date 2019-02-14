@@ -21,7 +21,7 @@ $redis->connect('127.0.0.1', 6379);
 if ($chat_id > 0) {
     if ($text == "/start") {
 
-        $telegram->sendMessage($service->genMenu());        
+        $telegram->sendMessage($service->genMenu());
     }
 
     if (preg_match('/\d+:.+/', $text, $matches)) {
@@ -134,10 +134,34 @@ if (!is_null($telegram->Callback_Data())) {
             $service->setTokenMsg();
             break;
         case 'endCampaign':
+            $telegram->editMessageText([
+                'chat_id' => $callback['from']['id'],
+                'message_id' => $callback['message']['message_id'],
+                'text' => 'Вы уверены, что хотите завершить конкурс?',
+                'reply_markup' => $telegram->buildInlineKeyBoard(
+                    [
+                        [['text' => '✅ Подтвердить', 'callback_data' => 'confirm']],
+                        [['text' => '️⛔ Отменить завершение', 'callback_data' => 'reject']]
+                    ]
+                )
+            ]);
+            break;
+
+        
+        case 'confirm':
             $token = $redis->hGet('tokens', $chat_id);
             $redis->sRem('campaigns', $token);
+            $redis->delete('members:' . $token);
+            $redis->delete('winners:' . $token);
             $telegram->editMessageText(array_merge($service->genMenu(), ['message_id' => $callback['message']['message_id']]));
-
+            
+            break;
+        case 'getWinner':
+            $token = $redis->hGet('tokens', $chat_id);
+            $redis->sAdd('winners:'.$token,$redis->sPop('members:' . $token));
+        case 'reject':
+        case 'refresh':
+            $telegram->editMessageText(array_merge($service->genMenu(), ['message_id' => $callback['message']['message_id']]));
             break;
         case 'startCampaign':
             $token = $redis->hGet('tokens', $chat_id);
@@ -148,22 +172,21 @@ if (!is_null($telegram->Callback_Data())) {
                 $admins = $tg->getChatAdministrators(['chat_id' => $chat]);
                 ($service->botIsAdmin($chat, $chat_id)) ? array_push($chats, $chat) : $flag = 0;
             }
-            
             if ($flag == 1) {
-                
-                if ($redis->sIsMember('campaigns', $token)!=1) {
+
+                if ($redis->sIsMember('campaigns', $token) != 1) {
                     $redis->sAdd('campaigns', $token);
                     foreach ($redis->sMembers('channels:' . $token) as $chat) {
-                        $tg->sendMessage($service->genPost($chat,$token));
+                        $tg->sendMessage($service->genPost($chat, $token));
                         ($service->botIsAdmin($chat, $chat_id)) ? array_push($chats, $chat) : $flag = 0;
                     }
-                    
+
                     $telegram->answerCallbackQuery([
                         'callback_query_id' => $callback['id'],
                         'text' => 'Сообщения с объявлением направлены в каналы'
                     ]);
 
-                    
+
                     $telegram->editMessageText(array_merge($service->genMenu(), ['message_id' => $callback['message']['message_id']]));
 
 
@@ -179,25 +202,24 @@ if (!is_null($telegram->Callback_Data())) {
             break;
         case 'accept':
             //$service->debug($callback);
-            $token=0;
-            foreach ($redis->sMembers('campaigns') as $k) if (explode(':', $k)[0] == $callbackData[1]) $token=$k;
-            
-            if($token!=0){
-                $tg=new Telegram($token);
+            $token = 0;
+            foreach ($redis->sMembers('campaigns') as $k) if (explode(':', $k)[0] == $callbackData[1]) $token = $k;
+
+            if ($token != 0) {
+                $text = ($redis->sIsMember('members:' . $token, serialize($callback['from']))) ? 'Вы уже участвуете в конкурсе' : 'Спасибо за участие';
+                $tg = new Telegram($token);
                 $tg->answerCallbackQuery([
                     'callback_query_id' => $callback['id'],
-                    'text' => 'Спасибо за участие'
+                    'text' => $text
                 ]);
-                //$service->debug($callback);
+                $service->debug($redis->sIsMember('members:' . $token, serialize($callback['from']['id'])));
 
-                $redis->sAdd('members:'.$token,serialize($callback['from']));
+                $redis->sAdd('members:' . $token, serialize($callback['from']));
                 /*foreach($redis->sMembers('members:'.$token) as $member){
                     $service->debug($member);
                 }*/
-
-                
-            } 
-            $tg->editMessageText(array_merge($service->genPost($callback['message']['chat']['id'],$token), ['message_id' => $callback['message']['message_id']]));
+            }
+            $tg->editMessageText(array_merge($service->genPost($callback['message']['chat']['id'], $token), ['message_id' => $callback['message']['message_id']]));
             break;
     }
 }

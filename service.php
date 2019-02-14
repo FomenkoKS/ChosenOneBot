@@ -45,6 +45,7 @@ class Service
         $buttons=[];
         if($this->redis->sIsMember('campaigns',$token)){
             $text='Чтобы участвовать в розыгрыше, нажмите кнопку ниже.';
+            if(($count=$this->redis->sCard('members:'.$token))>0) $text.="\r\n\r\nКоличество участников: <b>$count</b>";
             array_push($buttons,[[
                 'text' => 'Я участвую!',
                 'callback_data' => 'accept:' .explode(':', $token)[0]
@@ -55,6 +56,7 @@ class Service
         $settings=[
             'chat_id' => $chat,
             'text' => $text,
+            'parse_mode' => 'HTML',
             'reply_markup' => json_encode([
                 'inline_keyboard' => $buttons
             ])
@@ -71,10 +73,10 @@ class Service
         $tg = new Telegram($token);
         
         $bot = $tg->getMe();
-        $buttons = [];
+        $buttons = [[['callback_data' => 'setToken', 'text' => '🤖 Подключить токен']]];
         if (isset($bot['result']['username'])) {
             $text = "К системе подключён бот @" . $bot['result']['username'];
-            array_push($buttons, [['callback_data' => 'setChannel', 'text' => 'Добавить канал']]);
+            array_push($buttons, [['callback_data' => 'setChannel', 'text' => '➕ Добавить канал']]);
             
             if($this->redis->sCard('channels:'.$token)>0){
                 $text.="\r\n\r\n<b>Подключённые каналы:</b>";
@@ -87,20 +89,35 @@ class Service
                 }
 
                 if($this->redis->sCard('channels:'.$token)>0){
-                    array_push($buttons, [['callback_data' => 'delChannel', 'text' => 'Убрать канал']]);
-                    if($this->redis->sIsMember('campaigns',$token)){
-                        array_push($buttons, [['callback_data' => 'endCampaign', 'text' => 'Завершить розыгрыш']]);
+                    array_push($buttons, [['callback_data' => 'delChannel', 'text' => '➖ Убрать канал']]);
+                    if(($count=$this->redis->sCard('members:'.$token))>0){
+                        $text.="\r\n\r\nКоличество участников: <b>$count</b>.\r\nВы можете выявить победителя, но информация о победителях опубликуется на ваших каналах лишь после нажатия кнопки «Завершить конкурс».";
+                        
+                        array_push($buttons, [['callback_data' => 'getWinner', 'text' => '🏆 Выявить победителя']]);
                     }else{
-                        array_push($buttons, [['callback_data' => 'startCampaign', 'text' => 'Начать розыгрыш']]);
+                        
+                        if($this->redis->sIsMember('campaigns',$token)){
+                            $text.="\r\n\r\n<b>Чтобы обновить информацию о количестве участников, а также выявить победителя необходимо нажать на кнопку «Обновить информацию».</b>";
+                            array_push($buttons, [['callback_data' => 'refresh', 'text' => '🔄 Обновить информацию']]);
+                        }else{
+                            array_push($buttons, [['callback_data' => 'startCampaign', 'text' => '🏁 Начать розыгрыш']]);
+                        }
                     }
+                    
+                    if(($count=$this->redis->sCard('winners:'.$token))>0){
+                        $text.="\r\n\r\nПобедителей: <b>$count</b>.";
+                        array_push($buttons, [['callback_data' => 'endCampaign', 'text' => '⏹ Завершить розыгрыш']]);
+                    }
+                    
                 }
+
+
 
 
             }
 
         } else $text = "<b>Для начала работы создайте своего бота и укажите его токен.</b>\r\n\r\nЧтобы подключить токен выберите команду /setToken или нажмите кнопку ниже.";
         
-        array_push($buttons, [['callback_data' => 'setToken', 'text' => 'Подключить токен']]);
         
         $settings = [
             'chat_id' => $this->chat_id,
