@@ -44,13 +44,13 @@ class Service
     {
         $buttons = [];
         if ($this->redis->sIsMember('campaigns', $token)) {
-            $text = "Каналы участвующие в розыгрыше: ".implode(', ',$this->getChannelList($token)).".\r\nЧтобы участвовать в розыгрыше, нажмите кнопку ниже.";
+            $text = "Каналы участвующие в розыгрыше: " . implode(', ', $this->getChannelList($token)) . ".\r\nЧтобы участвовать в розыгрыше, нажмите кнопку ниже.";
             if (($count = $this->redis->sCard('members:' . $token)) > 0) $text .= "\r\n\r\nКоличество участников: <b>$count</b>";
             array_push($buttons, [[
                 'text' => 'Я участвую!',
                 'callback_data' => 'accept:' . explode(':', $token)[0]
             ]]);
-        } else { 
+        } else {
             $text = 'Конкурс завершён.';
         }
         $settings = [
@@ -82,31 +82,28 @@ class Service
                 $text .= "\r\n\r\n<b>Подключённые каналы:</b>\r\n";
                 $text .= implode("\r\n", $this->getChannelList($token));
 
-                if ($this->redis->sCard('channels:' . $token) > 0) {
-                    array_push($buttons, [['callback_data' => 'delChannel', 'text' => '➖ Убрать канал']]);
-                    if (($count = $this->redis->sCard('members:' . $token)) > 0) {
-                        $text .= "\r\n\r\nКоличество участников: <b>$count</b>.\r\nВы можете выявить победителя, но информация о победителях опубликуется на ваших каналах лишь после нажатия кнопки «Завершить конкурс».";
-
-                        array_push($buttons, [['callback_data' => 'getWinner', 'text' => '🏆 Выявить победителя']]);
-                    } else {
-                        if ($this->redis->sIsMember('campaigns', $token)) {
-                            $text .= "\r\n\r\n<b>Чтобы обновить информацию о количестве участников, а также выявить победителя необходимо нажать на кнопку «Обновить информацию».</b>";
-                            array_push($buttons, [['callback_data' => 'refresh', 'text' => '🔄 Обновить информацию']]);
-                        } else {
-                            array_push($buttons, [['callback_data' => 'startCampaign', 'text' => '🏁 Начать розыгрыш']]);
-                        }
-                    }
-
-                    if (($count = $this->redis->sCard('winners:' . $token)) > 0) {
-                        $text .= "\r\n\r\nПобедителей: <b>$count</b>.";
-                        array_push($buttons, [['callback_data' => 'endCampaign', 'text' => '⏹ Завершить розыгрыш']]);
-                    }
-
+                array_push($buttons, [['callback_data' => 'delChannel', 'text' => '➖ Убрать канал']]);
+                if ($this->redis->sIsMember('campaigns', $token)) {
+                    $text .= "\r\n\r\n<b>Конкурс начат.</b>";
                 }
 
+                if (($count = $this->redis->sCard('members:' . $token)) > 0) {
+                    $text .= "\r\nКоличество участников: <b>$count</b>.\r\nВы можете выявить победителя, но информация о победителях опубликуется на ваших каналах лишь после нажатия кнопки «Завершить конкурс».";
 
+                    array_push($buttons, [['callback_data' => 'getWinner', 'text' => '🏆 Выявить победителя']]);
+                } else {
+                    if ($this->redis->sIsMember('campaigns', $token)) {
+                        $text .= "\r\n<b>Чтобы обновить информацию о количестве участников, а также выявить победителя необходимо нажать на кнопку «Обновить информацию».</b>";
+                        array_push($buttons, [['callback_data' => 'refresh', 'text' => '🔄 Обновить информацию']]);
+                    } else {
+                        array_push($buttons, [['callback_data' => 'startCampaign', 'text' => '🏁 Начать розыгрыш']]);
+                    }
+                }
 
-
+                if (($count = $this->redis->sCard('winners:' . $token)) > 0) {
+                    $text .= "\r\n\r\nПобедителей: <b>$count</b>.";
+                    array_push($buttons, [['callback_data' => 'endCampaign', 'text' => '⏹ Завершить розыгрыш']]);
+                }
             }
 
         } else $text = "<b>Для начала работы создайте своего бота и укажите его токен.</b>\r\n\r\nЧтобы подключить токен выберите команду /setToken или нажмите кнопку ниже.";
@@ -141,6 +138,10 @@ class Service
         return ($flag > 1) ? true : false;
     }
 
+    public function conditionsComplied(){
+        return true;
+    }
+
     public function debug($array)
     {
         $this->telegram->sendMessage([
@@ -165,7 +166,6 @@ class Service
             $title = (!isset($chat['username'])) ? $chat['title'] : "<a href='t.me/" . $chat['username'] . "'>" . $chat['title'] . "</a>";
             array_push($a, $title);
         }
-
         return $a;
     }
 }

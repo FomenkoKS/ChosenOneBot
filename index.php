@@ -20,7 +20,6 @@ $redis->connect('127.0.0.1', 6379);
 
 if ($chat_id > 0) {
     if ($text == "/start") {
-
         $telegram->sendMessage($service->genMenu());
     }
 
@@ -75,6 +74,7 @@ if ($chat_id > 0) {
         if (!is_null($chat)) {
             $token = $redis->hGet('tokens', $chat_id);
             $flag = $service->botIsAdmin($chat, $chat_id);
+            
             if ($flag) {
                 $chat = $service->getChatId($chat);
                 $redis->sRem('channels:' . $token, $chat);
@@ -207,20 +207,36 @@ if (!is_null($telegram->Callback_Data())) {
 
             if ($token != 0) {
                 $user=$callback['from'];
-                $text = ($redis->sIsMember('members:' . $token, serialize($user))) ? 'Вы уже участвуете в конкурсе' : 'Спасибо за участие';
+                $text = ($redis->sIsMember('members:' . $token, serialize($user))) ? 'Вы уже участвуете в конкурсе.' : 'Спасибо за участие.';
                 
                 $tg = new Telegram($token);
                 $flag=false;
+                $flag2=false;
                 foreach($redis->sMembers('channels:' . $token) as $chat_id){
-                    $admins=$tg->getChatAdministrators(['chat_id'=>$chat_id]);
+                    //$admins=$tg->getChatAdministrators(['chat_id'=>$chat_id]);
+
+                    //foreach($admins['result'] as $admin) if($admin['user']['id']==$user['id']) $flag=true;
+                    $status=$tg->getChatMember(['chat_id'=>$chat_id,'user_id'=>$user['id']])['result']['status'];
+                    //$service->debug($status);
+                    switch($status){
+                        case 'creator':
+                        case 'administrator':
+                            $flag=true;
+                            break;
+                        case 'left':
+                            $flag2=true;
+                        break;
+                    }
                     
                     foreach($admins['result'] as $admin) if($admin['user']['id']==$user['id']) $flag=true;
                 }
-                if ($flag==1) $text='Вы состоите в администраторах одного из каналов';
+                if($flag2) $text.="\r\nНе забудьте вступить в остальные каналы.";
+                if ($flag) $text='Вы состоите в администраторах одного из каналов';
                 
                 $tg->answerCallbackQuery([
                     'callback_query_id' => $callback['id'],
-                    'text' => $text
+                    'text' => $text,
+                    'show_alert'=>true
                 ]);
 
                 if(!$flag) $redis->sAdd('members:' . $token, serialize($callback['from']));
