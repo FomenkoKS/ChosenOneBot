@@ -206,15 +206,24 @@ if (!is_null($telegram->Callback_Data())) {
             foreach ($redis->sMembers('campaigns') as $k) if (explode(':', $k)[0] == $callbackData[1]) $token = $k;
 
             if ($token != 0) {
-                $text = ($redis->sIsMember('members:' . $token, serialize($callback['from']))) ? 'Вы уже участвуете в конкурсе' : 'Спасибо за участие';
+                $user=$callback['from'];
+                $text = ($redis->sIsMember('members:' . $token, serialize($user))) ? 'Вы уже участвуете в конкурсе' : 'Спасибо за участие';
+                
                 $tg = new Telegram($token);
+                $flag=false;
+                foreach($redis->sMembers('channels:' . $token) as $chat_id){
+                    $admins=$tg->getChatAdministrators(['chat_id'=>$chat_id]);
+                    
+                    foreach($admins['result'] as $admin) if($admin['user']['id']==$user['id']) $flag=true;
+                }
+                if ($flag==1) $text='Вы состоите в администраторах одного из каналов';
+                
                 $tg->answerCallbackQuery([
                     'callback_query_id' => $callback['id'],
                     'text' => $text
                 ]);
-                $service->debug($redis->sIsMember('members:' . $token, serialize($callback['from']['id'])));
 
-                $redis->sAdd('members:' . $token, serialize($callback['from']));
+                if(!$flag) $redis->sAdd('members:' . $token, serialize($callback['from']));
                 /*foreach($redis->sMembers('members:'.$token) as $member){
                     $service->debug($member);
                 }*/
