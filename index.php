@@ -23,6 +23,11 @@ if ($chat_id > 0) {
         $telegram->sendMessage($service->genMenu());
     }
 
+    if ($text == "/done") {
+        $service->cancelWaiting();
+        $telegram->sendMessage($service->genMenu());
+    }
+
     if (preg_match('/\d+:.+/', $text, $matches)) {
         $newTg = new Telegram($matches[0]);
         $bot = $newTg->getMe();
@@ -46,24 +51,7 @@ if ($chat_id > 0) {
             ]);
         }
     }
-
-    if ($text == "/done") {
-        $service->cancelWaiting();
-        $telegram->sendMessage($service->genMenu());
-    }
-
-    if ($text == "/menu") {
-        $telegram->sendMessage($service->genMenu());
-    }
-
-    if ($text == "/setToken") {
-        $service->setTokenMsg();
-    }
-
-    if ($text == "/setChannel") {
-        $service->setChannelMsg();
-    }
-
+    
     if ($redis->hGet('waitChannel', $chat_id) == 1) {
         $chat = null;
         if (preg_match('/(@(\w+)|t.me\/(\w+))/', $message['text'], $matches)) {
@@ -100,6 +88,7 @@ if (!is_null($telegram->Callback_Data())) {
         case 'setChannel':
             $service->setChannelMsg();
             break;
+
         case 'delChannel':
             if (count($callbackData) == 1) {
                 $token = $redis->hGet('tokens', $chat_id);
@@ -122,7 +111,6 @@ if (!is_null($telegram->Callback_Data())) {
             } else {
                 $token = $redis->hGet('tokens', $chat_id);
                 $redis->sRem('channels:' . $token, $callbackData[1]);
-                //$service->debug($menu);
                 $telegram->editMessageText(array_merge($service->genMenu(), ['message_id' => $callback['message']['message_id']]));
                 $telegram->answerCallbackQuery([
                     'callback_query_id' => $callback['id'],
@@ -134,6 +122,7 @@ if (!is_null($telegram->Callback_Data())) {
         case 'setToken':
             $service->setTokenMsg();
             break;
+
         case 'endCampaign':
             $telegram->editMessageText([
                 'chat_id' => $callback['from']['id'],
@@ -147,6 +136,7 @@ if (!is_null($telegram->Callback_Data())) {
                 )
             ]);
             break;
+
         case 'eraseMembers':
             $telegram->editMessageText([
                 'chat_id' => $callback['from']['id'],
@@ -160,12 +150,11 @@ if (!is_null($telegram->Callback_Data())) {
                     )
             ]);
         break;
+
         case 'confirm':
             switch ($callbackData[1]){
                 case 'endCampaign':
                     $token = $redis->hGet('tokens', $chat_id);
-                    $redis->sRem('campaigns', $token);
-                    $redis->delete('winners:' . $token);
                     $telegram->editMessageText([
                         'chat_id' => $callback['from']['id'],
                         'message_id' => $callback['message']['message_id'],
@@ -177,7 +166,30 @@ if (!is_null($telegram->Callback_Data())) {
                                 ]
                             )
                     ]);
+                    $winners=$redis->sMembers('winners:' . $token);
+                    
+                    if(count($winners)>1){
+                        $text="\r\n\r\nПобедители:\r\n";
+                        foreach($winners as $i=>$v) $text.="<b>".($i+1).")</b> ".$service->getFullname(unserialize($v))."\r\n";
+                    } else $text='Победитель: '.$service->getFullname(unserialize($winners[0]));
+                    $tg=new Telegram($token);
+                    foreach ($redis->sMembers('channels:' . $token) as $chat) {
+                        $tg->sendMessage([ 
+                            'chat_id' => $chat,
+                            'text' => 'Конкурс завершён. '.$text,
+                            'parse_mode' => 'HTML'
+                            ]);
+                    }
+                    $telegram->sendMessage([ 
+                        'chat_id' => $chat_id,
+                        'text' => 'Конкурс завершён. '.$text."\r\nЕсли вам понравился бот, то вы всегда можете <a href='https://yasobe.ru/na/anfisa'>кинуть донат на развитие Анфисы</a>.\r\nОбратная связь: @Anfisa_Feedback_Bot.",
+                        'parse_mode' => 'HTML'
+                    ]);
+                    $redis->sRem('campaigns', $token);                               
+                    $redis->delete('winners:' . $token);
+                    
                 break;
+
                 case 'eraseMembers':
                     $token = $redis->hGet('tokens', $chat_id);
                     $redis->delete('members:' . $token);
@@ -186,6 +198,16 @@ if (!is_null($telegram->Callback_Data())) {
             }
              
             break;
+
+        case 'showMembers':
+            if(!isset($callbackData[1])){
+                $telegram->sendMessage($service->genMemberList());
+            }else{
+                $page=$callbackData[1];
+                $telegram->editMessageText(array_merge($service->genMemberList($page), ['message_id' => $callback['message']['message_id']]));
+            }
+        break;
+
         case 'getWinner':
             $token = $redis->hGet('tokens', $chat_id);
             $flag=false;
@@ -193,12 +215,11 @@ if (!is_null($telegram->Callback_Data())) {
             while($redis->sCard('members:' .  $token)>0 && !$flag){
                 $member=unserialize($redis->sPop('members:' . $token));
                 $result=$service->conditionsComplied($token,$member['id']);
-                
+                $user=$service->getFullname($member);
                 if($result==0) {
                     $flag=true;
-                    $redis->sAdd('winners:'.$token,$member);
+                    $redis->sAdd('winners:'.$token,serialize($member));
                 }else{
-                    $user=$service->getFullname($member);
                     $telegram->answerCallbackQuery([
                         'callback_query_id' => $callback['id'],
                         'text' => "Пользователь $user не подходит под условия участия. Он был удалён.",
@@ -206,6 +227,7 @@ if (!is_null($telegram->Callback_Data())) {
                     ]);
                 }
             }
+            if($flag)$telegram->sendMessage(['chat_id'=>$chat_id,'text'=>"Определён победитель $user.",'parse_mode' => 'HTML']);
             
         case 'reject':
         case 'refresh':
