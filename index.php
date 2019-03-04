@@ -185,7 +185,7 @@ if (!is_null($telegram->Callback_Data())) {
                         'text' => 'Конкурс завершён. '.$text."\r\nЕсли вам понравился бот, то вы всегда можете <a href='https://yasobe.ru/na/anfisa'>кинуть донат на развитие Анфисы</a>.\r\nОбратная связь: @Anfisa_Feedback_Bot.",
                         'parse_mode' => 'HTML'
                     ]);
-                    $redis->sRem('campaigns', $token);                               
+                    $redis->sRem('campaigns', $token);                             
                     $redis->delete('winners:' . $token);
                     
                 break;

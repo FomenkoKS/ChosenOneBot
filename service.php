@@ -63,6 +63,7 @@ class Service
             'chat_id' => $chat,
             'text' => $text,
             'parse_mode' => 'HTML',
+            'disable_web_page_preview'=>true,
             'reply_markup' => json_encode([
                 'inline_keyboard' => $buttons
             ])
@@ -76,16 +77,17 @@ class Service
         $token = $this->redis->hGet('tokens', $this->chat_id);
         $members=$this->redis->sMembers('members:'.$token);
         $cMembers=count($members);
+        $members=array_chunk($members,25);
         if($cMembers>0){
             $text="<b>Участники конкурса($cMembers):</b>";
+            $buttons=[];
             if($cMembers>25){
-                $text.="Cтраница $page из ".$cMembers/25;
-                $buttons=[];
-                if($page<($cMembers/25)) array_push($buttons,['callback_data' => 'showMembers'.($page-1), 'text' => 'На страницу '.($page-1)]);
-                if($page>1) array_push($buttons,['callback_data' => 'showMembers'.($page+1), 'text' => 'На страницу '.($page+1)]);
-                array_push($settings,['reply_markup' => json_encode(['inline_keyboard' => [$buttons]])]);
+                $text.="Cтраница $page из ".ceil($cMembers/25);
+                if($page<ceil($cMembers/25)) array_push($buttons,['callback_data' => 'showMembers:'.($page+1), 'text' => 'На страницу '.($page+1)]);
+                if($page>1) array_push($buttons,['callback_data' => 'showMembers:'.($page-1), 'text' => 'На страницу '.($page-1)]);
+
             }
-            foreach($members as $m){
+            foreach($members[$page-1] as $m){
                 $text.="\r\n".$this->getFullname(unserialize($m));
             }
         }
@@ -93,7 +95,10 @@ class Service
             'chat_id' => $this->chat_id,
             'text' => $text,
             'parse_mode' => 'HTML',
-            'disable_web_page_preview'=>'false'   
+            'disable_web_page_preview'=>true,
+            'reply_markup' => json_encode([
+                'inline_keyboard' => [$buttons]
+            ])
         ];
         return $settings;
     }
@@ -103,7 +108,6 @@ class Service
         $this->cancelWaiting();
         $token = $this->redis->hGet('tokens', $this->chat_id);
         $tg = new Telegram($token);
-
         $bot = $tg->getMe();
         $buttons = [[['callback_data' => 'setToken', 'text' => '🤖 Подключить токен']]];
 
@@ -151,6 +155,7 @@ class Service
             'chat_id' => $this->chat_id,
             'text' => $text,
             'parse_mode' => 'HTML',
+            'disable_web_page_preview'=>true,
             'reply_markup' => json_encode([
                 'inline_keyboard' => $buttons
             ])
