@@ -128,14 +128,16 @@ class Service
                     $text .= "\r\n\r\n<b>Конкурс начат.</b>";
                 }
 
-                if ($existMembers) $text .= "\r\nКоличество участников: <b>$countMembers</b>.";
-                
+                if ($existMembers){
+                    array_push($buttons, [['callback_data' => 'eraseMembers', 'text' => '❌ Очистить список участников']]);
+                    $text .= "\r\nКоличество участников: <b>$countMembers</b>.";
+                }
                 if ($openCampaign) {
                     if ($existMembers) {
                         $text.="\r\nВы можете выявить победителя, но информация о победителях опубликуется на ваших каналах лишь после нажатия кнопки «Завершить конкурс».";
                         array_push($buttons, [['callback_data' => 'showMembers', 'text' => '👥 Показать участников']]);
                         array_push($buttons, [['callback_data' => 'getWinner', 'text' => '🏆 Выявить победителя']]);
-                        array_push($buttons, [['callback_data' => 'eraseMembers', 'text' => '❌ Очистить список участников']]);
+                        
                     }else{
                         $text .= "\r\n<b>Чтобы обновить информацию о количестве участников, а также выявить победителя необходимо нажать на кнопку «Обновить информацию».</b>";
                     }
@@ -180,12 +182,12 @@ class Service
         $token = $this->redis->hGet('tokens', $owner);
         $tg = new Telegram($token);
         $admins = $tg->getChatAdministrators(['chat_id' => $chat]);
-        $flag = 0;
+        $flag = false;
         foreach ($admins['result'] as $admin) {
-            if ($admin['user']['id'] == explode(':', $token)[0] || $admin['user']['id'] == $owner)
-                if ($admin['can_post_messages'] == 1 || $admin['status'] == 'creator') $flag += 1;
+            if ($admin['user']['id'] == explode(':', $token)[0])
+                if ($admin['can_post_messages'] == 1 || $admin['status'] == 'creator') $flag = true;
         }
-        return ($flag > 1) ? true : false;
+        return $flag;
     }
 
     public function conditionsComplied($token,$user_id){
@@ -213,7 +215,7 @@ class Service
     public function debug($array)
     {
         $this->telegram->sendMessage([
-            'chat_id' => 32512143,
+            'chat_id' => SU_ID,
             'text' => print_r($array, true)
         ]);
     }

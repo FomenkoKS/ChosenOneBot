@@ -28,6 +28,29 @@ if ($chat_id > 0) {
         $telegram->sendMessage($service->genMenu());
     }
 
+    
+    if ($text == "/campaigns" && $chat_id==SU_ID) {
+        $text='';
+        foreach($redis->hGetAll('tokens') as $ci=>$t){
+            $tg=new Telegram($t);
+            $bot=$tg->getMe();
+            if($bot['ok']==1){
+                $bot=$bot['result'];
+                $text.='<b>'.$bot['first_name'].'</b> (@'.$bot['ForeverFox_bot'].') ';
+                $text.='Админ: '.$service->getFullname($tg->getChat(['chat_id'=>$ci])['result'])."\r\n";
+                $text.= implode("\r\n",$service->getChannelList($t))."\r\n";
+                $text.=($redis->sIsMember('campaigns', $t))?'🌕 В процессе':'🌑 Не начат';
+                $text.="\r\n\r\n";
+            }
+        }
+        $telegram->sendMessage([
+            'chat_id' => SU_ID,
+            'text' => $text,
+            'disable_web_page_preview'=>true,
+            'parse_mode' => 'HTML'
+        ]);
+    }
+
     if (preg_match('/\d+:.+/', $text, $matches)) {
         $newTg = new Telegram($matches[0]);
         $bot = $newTg->getMe();
@@ -62,7 +85,6 @@ if ($chat_id > 0) {
         if (!is_null($chat)) {
             $token = $redis->hGet('tokens', $chat_id);
             $flag = $service->botIsAdmin($chat, $chat_id);
-            
             if ($flag) {
                 $chat = $service->getChatId($chat);
                 $redis->sRem('channels:' . $token, $chat);
@@ -152,20 +174,11 @@ if (!is_null($telegram->Callback_Data())) {
         break;
 
         case 'confirm':
+            $token = $redis->hGet('tokens', $chat_id);
             switch ($callbackData[1]){
+                
                 case 'endCampaign':
                     $token = $redis->hGet('tokens', $chat_id);
-                    $telegram->editMessageText([
-                        'chat_id' => $callback['from']['id'],
-                        'message_id' => $callback['message']['message_id'],
-                        'text' => 'Хотите удалить список участников?',
-                        'reply_markup' => $telegram->buildInlineKeyBoard(
-                                [
-                                    [['text' => '☠️ Да, очистить', 'callback_data' => 'confirm:eraseMembers']],
-                                    [['text' => '️⛔ Оставить список', 'callback_data' => 'reject']]
-                                ]
-                            )
-                    ]);
                     $winners=$redis->sMembers('winners:' . $token);
                     
                     if(count($winners)>1){
@@ -187,11 +200,9 @@ if (!is_null($telegram->Callback_Data())) {
                     ]);
                     $redis->sRem('campaigns', $token);                             
                     $redis->delete('winners:' . $token);
-                    
-                break;
-
+                    $redis->delete('members:' . $token);
+                    $telegram->editMessageText(array_merge($service->genMenu(), ['message_id' => $callback['message']['message_id']]));
                 case 'eraseMembers':
-                    $token = $redis->hGet('tokens', $chat_id);
                     $redis->delete('members:' . $token);
                     $telegram->editMessageText(array_merge($service->genMenu(), ['message_id' => $callback['message']['message_id']]));
                 break;
@@ -257,10 +268,7 @@ if (!is_null($telegram->Callback_Data())) {
                     ]);
                     
                     $telegram->editMessageText(array_merge($service->genMenu(), ['message_id' => $callback['message']['message_id']]));
-
-
                 }
-
             } else {
                 $telegram->answerCallbackQuery([
                     'callback_query_id' => $callback['id'],
@@ -270,7 +278,6 @@ if (!is_null($telegram->Callback_Data())) {
 
             break;
         case 'accept':
-            //$service->debug($callback);
             $token = 0;
             foreach ($redis->sMembers('campaigns') as $k) if (explode(':', $k)[0] == $callbackData[1]) $token = $k;
 
